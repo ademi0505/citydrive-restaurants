@@ -396,6 +396,7 @@
     </form>
   </dialog>
 
+  <script src="restaurants-data.js"></script>
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
     import {
@@ -408,6 +409,7 @@
       orderBy,
       query,
       serverTimestamp,
+      setDoc,
       updateDoc
     } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
 
@@ -426,6 +428,7 @@
     const db = getFirestore(app);
     const restaurantsRef = collection(db, 'restaurants');
     const restaurantsQuery = query(restaurantsRef, orderBy('createdAt', 'desc'));
+    const seedRestaurants = window.CITYDRIVE_SEED_RESTAURANTS || [];
 
     const listEl = document.querySelector('#restaurantList');
     const searchInput = document.querySelector('#searchInput');
@@ -442,6 +445,7 @@
     let restaurants = [];
     let editingId = null;
     let managerMode = false;
+    let seedImportStarted = false;
 
     function askManagerPassword() {
       const password = prompt('Введите пароль управляющего');
@@ -532,6 +536,24 @@
       }
     }
 
+    async function importSeedRestaurants() {
+      seedImportStarted = true;
+
+      try {
+        await Promise.all(seedRestaurants.map((restaurant, index) => {
+          const restaurantId = `seed_${String(index + 1).padStart(3, '0')}`;
+          return setDoc(doc(db, 'restaurants', restaurantId), {
+            ...restaurant,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        }));
+      } catch (error) {
+        console.error(error);
+        alert('Не удалось загрузить готовый список ресторанов. Проверьте правила Firestore.');
+      }
+    }
+
     addButton.addEventListener('click', () => openRestaurantForm('add'));
     toggleManageButton.addEventListener('click', () => {
       if (managerMode) {
@@ -584,6 +606,21 @@
     });
 
     onSnapshot(restaurantsQuery, (snapshot) => {
+      const existingIds = new Set(snapshot.docs.map((restaurantDoc) => restaurantDoc.id));
+      const hasMissingSeedRestaurants = seedRestaurants.some((restaurant, index) => {
+        return !existingIds.has(`seed_${String(index + 1).padStart(3, '0')}`);
+      });
+
+      if (hasMissingSeedRestaurants && seedRestaurants.length > 0 && !seedImportStarted) {
+        listEl.innerHTML = '';
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = 'Загружаем список ресторанов...';
+        listEl.append(empty);
+        importSeedRestaurants();
+        return;
+      }
+
       restaurants = snapshot.docs.map((restaurantDoc) => ({
         id: restaurantDoc.id,
         ...restaurantDoc.data()
