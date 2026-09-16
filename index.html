@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>City Drive | Рестораны</title>
+  <style>
+    :root {
+      --green: #075f2d;
+      --green-soft: #0b7a3a;
+      --red: #d71920;
+      --ink: #080a0e;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --bg: #f4f5f4;
+      --panel: #ffffff;
+      --shadow: 0 20px 60px rgba(8, 10, 14, .12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.94), rgba(244,245,244,.98)),
+        radial-gradient(circle at 18% 0%, rgba(7,95,45,.14), transparent 32%),
+        var(--bg);
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px clamp(16px, 4vw, 48px);
+      background: rgba(255, 255, 255, .9);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(12px);
+    }
+
+    .brand-logo {
+      width: min(160px, 42vw);
+      height: auto;
+      display: block;
+    }
+
+    .green {
+      color: var(--green);
+    }
+
+    .manager-add {
+      flex: 0 0 auto;
+      border: 0;
+      border-radius: 6px;
+      padding: 12px 16px;
+      color: #fff;
+      background: var(--ink);
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 10px 24px rgba(8, 10, 14, .18);
+    }
+
+    .manager-add:hover {
+      background: var(--green);
+    }
+
+    .top-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .manager-edit {
+      flex: 0 0 auto;
+      border: 0;
+      border-radius: 6px;
+      padding: 12px 16px;
+      color: #fff;
+      background: var(--green-soft);
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 10px 24px rgba(8, 10, 14, .14);
+    }
+
+    .manager-edit.is-active {
+      background: var(--red);
+    }
+
+    .hero-logo {
+      width: 100%;
+      padding: clamp(18px, 4vw, 34px) clamp(16px, 4vw, 48px);
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .hero-logo img {
+      width: min(640px, 100%);
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    main {
+      width: min(1160px, calc(100% - 32px));
+      margin: 0 auto 48px;
+    }
+
+    .search-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 12px 34px rgba(8, 10, 14, .08);
+    }
+
+    .search-row input {
+      width: 100%;
+      min-height: 48px;
+      border: 2px solid var(--red);
+      border-radius: 6px;
+      padding: 0 14px;
+      outline: none;
+    }
+
+    .search-row input:focus {
+      box-shadow: 0 0 0 4px rgba(215, 25, 32, .14);
+    }
+
+    .search-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0 18px;
+      border-radius: 6px;
+      color: #fff;
+      background: var(--red);
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .restaurant-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0 16px;
+      border-radius: 6px;
+      color: var(--ink);
+      background: #eef1ef;
+      border: 1px solid var(--line);
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .restaurants {
+      display: grid;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .restaurant {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: center;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-left: 6px solid var(--green);
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 10px 26px rgba(8, 10, 14, .06);
+    }
+
+    .restaurant h2 {
+      margin: 0 0 8px;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+
+    .restaurant a {
+      color: var(--green);
+      font-weight: 800;
+      text-decoration: none;
+      overflow-wrap: anywhere;
+    }
+
+    .restaurant a:hover {
+      text-decoration: underline;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .action {
+      min-width: 104px;
+      border: 0;
+      border-radius: 6px;
+      padding: 10px 12px;
+      color: #fff;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .edit {
+      background: var(--green-soft);
+    }
+
+    .delete {
+      background: var(--red);
+    }
+
+    .empty {
+      padding: 28px 16px;
+      border: 1px dashed #c7cbd1;
+      border-radius: 8px;
+      color: var(--muted);
+      background: rgba(255,255,255,.72);
+      text-align: center;
+      font-weight: 700;
+    }
+
+    .dialog {
+      width: min(460px, calc(100% - 28px));
+      border: 0;
+      border-radius: 8px;
+      padding: 0;
+      box-shadow: var(--shadow);
+    }
+
+    .dialog::backdrop {
+      background: rgba(8, 10, 14, .48);
+    }
+
+    .form {
+      display: grid;
+      gap: 14px;
+      padding: 20px;
+    }
+
+    .form h2 {
+      margin: 0;
+      font-size: 22px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+      color: #313844;
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .field input {
+      min-height: 44px;
+      border: 1px solid #cfd5dc;
+      border-radius: 6px;
+      padding: 0 12px;
+      outline: none;
+    }
+
+    .field input:focus {
+      border-color: var(--green);
+      box-shadow: 0 0 0 4px rgba(7, 95, 45, .12);
+    }
+
+    .form-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .secondary,
+    .primary {
+      border: 0;
+      border-radius: 6px;
+      padding: 11px 14px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .secondary {
+      color: var(--ink);
+      background: #e8eaed;
+    }
+
+    .primary {
+      color: #fff;
+      background: var(--green);
+    }
+
+    @media (max-width: 760px) {
+      .topbar,
+      .restaurant {
+        align-items: stretch;
+      }
+
+      .topbar,
+      .restaurant,
+      .search-row {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        display: grid;
+      }
+
+      .manager-add,
+      .manager-edit,
+      .restaurant-count,
+      .search-label {
+        width: 100%;
+      }
+
+      .top-actions {
+        display: grid;
+      }
+
+      .actions {
+        justify-content: stretch;
+      }
+
+      .action {
+        flex: 1 1 130px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <img class="brand-logo" src="citydrive-logo-hq.png" alt="City Drive">
+      <div class="top-actions">
+        <button class="manager-edit" type="button" id="toggleManage">Изменить</button>
+        <button class="manager-add" type="button" id="addRestaurant">+ Добавить ресторан</button>
+      </div>
+    </header>
+
+    <section class="hero-logo">
+      <img src="citydrive-logo-hq.png" alt="City Drive">
+    </section>
+
+    <main>
+      <div class="search-row">
+        <input id="searchInput" type="search" placeholder="Поиск ресторана..." autocomplete="off">
+        <span class="restaurant-count" id="restaurantCount">Всего: 0</span>
+        <span class="search-label">Поиск</span>
+      </div>
+
+      <section class="restaurants" id="restaurantList" aria-live="polite"></section>
+    </main>
+  </div>
+
+  <dialog class="dialog" id="restaurantDialog">
+    <form class="form" id="restaurantForm" method="dialog">
+      <h2 id="dialogTitle">Добавить ресторан</h2>
+      <label class="field">
+        Имя ресторана
+        <input id="nameInput" type="text" required maxlength="80" placeholder="Например: Burger House">
+      </label>
+      <label class="field">
+        Ссылка 2ГИС
+        <input id="linkInput" type="url" required placeholder="https://2gis.kz/...">
+      </label>
+      <div class="form-actions">
+        <button class="secondary" type="button" id="cancelDialog">Отмена</button>
+        <button class="primary" type="submit">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    const MANAGER_PASSWORD = 'CityDriveAstana01';
+    const STORAGE_KEY = 'city-drive-restaurants';
+
+    const fallbackRestaurants = [];
+
+    const listEl = document.querySelector('#restaurantList');
+    const searchInput = document.querySelector('#searchInput');
+    const restaurantCount = document.querySelector('#restaurantCount');
+    const addButton = document.querySelector('#addRestaurant');
+    const toggleManageButton = document.querySelector('#toggleManage');
+    const dialog = document.querySelector('#restaurantDialog');
+    const form = document.querySelector('#restaurantForm');
+    const dialogTitle = document.querySelector('#dialogTitle');
+    const nameInput = document.querySelector('#nameInput');
+    const linkInput = document.querySelector('#linkInput');
+    const cancelDialog = document.querySelector('#cancelDialog');
+
+    let restaurants = loadRestaurants();
+    let editingId = null;
+    let managerMode = false;
+
+    function loadRestaurants() {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (!saved) return fallbackRestaurants.map(createRestaurant);
+
+      try {
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed) ? parsed : fallbackRestaurants.map(createRestaurant);
+      } catch {
+        return fallbackRestaurants.map(createRestaurant);
+      }
+    }
+
+    function createRestaurant(restaurant) {
+      return {
+        id: crypto.randomUUID(),
+        name: restaurant.name,
+        link: restaurant.link
+      };
+    }
+
+    function saveRestaurants() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(restaurants));
+    }
+
+    function askManagerPassword() {
+      const password = prompt('Введите пароль управляющего');
+      if (password === MANAGER_PASSWORD) return true;
+      if (password !== null) alert('Неверный пароль');
+      return false;
+    }
+
+    function openRestaurantForm(mode, restaurant = null) {
+      if (!managerMode && !askManagerPassword()) return;
+
+      editingId = restaurant ? restaurant.id : null;
+      dialogTitle.textContent = mode === 'edit' ? 'Изменить ресторан' : 'Добавить ресторан';
+      nameInput.value = restaurant ? restaurant.name : '';
+      linkInput.value = restaurant ? restaurant.link : '';
+      dialog.showModal();
+      nameInput.focus();
+    }
+
+    function renderRestaurants() {
+      const query = searchInput.value.trim().toLowerCase();
+      restaurantCount.textContent = `Всего: ${restaurants.length}`;
+      const filtered = restaurants.filter((restaurant) => {
+        return restaurant.name.toLowerCase().includes(query) || restaurant.link.toLowerCase().includes(query);
+      });
+
+      listEl.innerHTML = '';
+
+      if (filtered.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = query ? 'Ресторан не найден' : 'Пока ресторанов нет';
+        listEl.append(empty);
+        return;
+      }
+
+      filtered.forEach((restaurant) => {
+        const card = document.createElement('article');
+        card.className = 'restaurant';
+
+        const info = document.createElement('div');
+        const title = document.createElement('h2');
+        title.textContent = restaurant.name;
+        const link = document.createElement('a');
+        link.href = restaurant.link;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = 'Открыть адрес в 2ГИС';
+        info.append(title, link);
+
+        card.append(info);
+
+        if (managerMode) {
+          const actions = document.createElement('div');
+          actions.className = 'actions';
+
+          const editButton = document.createElement('button');
+          editButton.className = 'action edit';
+          editButton.type = 'button';
+          editButton.textContent = 'Изменить';
+          editButton.addEventListener('click', () => openRestaurantForm('edit', restaurant));
+
+          const deleteButton = document.createElement('button');
+          deleteButton.className = 'action delete';
+          deleteButton.type = 'button';
+          deleteButton.textContent = 'Удалить';
+          deleteButton.addEventListener('click', () => deleteRestaurant(restaurant.id));
+
+          actions.append(editButton, deleteButton);
+          card.append(actions);
+        }
+
+        listEl.append(card);
+      });
+    }
+
+    function deleteRestaurant(id) {
+      if (!managerMode && !askManagerPassword()) return;
+      const restaurant = restaurants.find((item) => item.id === id);
+      if (!restaurant) return;
+      if (!confirm(`Удалить "${restaurant.name}"?`)) return;
+
+      restaurants = restaurants.filter((item) => item.id !== id);
+      saveRestaurants();
+      renderRestaurants();
+    }
+
+    addButton.addEventListener('click', () => openRestaurantForm('add'));
+    toggleManageButton.addEventListener('click', () => {
+      if (managerMode) {
+        managerMode = false;
+        toggleManageButton.classList.remove('is-active');
+        toggleManageButton.textContent = 'Изменить';
+        renderRestaurants();
+        return;
+      }
+
+      if (!askManagerPassword()) return;
+
+      managerMode = true;
+      toggleManageButton.classList.add('is-active');
+      toggleManageButton.textContent = 'Закрыть';
+      renderRestaurants();
+    });
+    searchInput.addEventListener('input', renderRestaurants);
+    cancelDialog.addEventListener('click', () => dialog.close());
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+
+      const restaurant = {
+        name: nameInput.value.trim(),
+        link: linkInput.value.trim()
+      };
+
+      if (!restaurant.name || !restaurant.link) return;
+
+      if (editingId) {
+        restaurants = restaurants.map((item) => item.id === editingId ? { ...item, ...restaurant } : item);
+      } else {
+        restaurants = [createRestaurant(restaurant), ...restaurants];
+      }
+
+      saveRestaurants();
+      dialog.close();
+      renderRestaurants();
+    });
+
+    renderRestaurants();
+  </script>
+</body>
+</html>
