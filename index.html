@@ -396,11 +396,36 @@
     </form>
   </dialog>
 
-  <script>
-    const MANAGER_PASSWORD = 'CityDriveAstana01';
-    const STORAGE_KEY = 'city-drive-restaurants';
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
+    import {
+      addDoc,
+      collection,
+      deleteDoc,
+      doc,
+      getFirestore,
+      onSnapshot,
+      orderBy,
+      query,
+      serverTimestamp,
+      updateDoc
+    } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
 
-    const fallbackRestaurants = [];
+    const MANAGER_PASSWORD = 'CityDriveAstana01';
+    const firebaseConfig = {
+      apiKey: 'AIzaSyDptLjtikacZljlzH9FKI1c8eqGUcFwek4',
+      authDomain: 'citydrive-restaurants.firebaseapp.com',
+      projectId: 'citydrive-restaurants',
+      storageBucket: 'citydrive-restaurants.firebasestorage.app',
+      messagingSenderId: '22514692355',
+      appId: '1:22514692355:web:8f3ab5493f775a15e7b936',
+      measurementId: 'G-XJ14NSVTWD'
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const restaurantsRef = collection(db, 'restaurants');
+    const restaurantsQuery = query(restaurantsRef, orderBy('createdAt', 'desc'));
 
     const listEl = document.querySelector('#restaurantList');
     const searchInput = document.querySelector('#searchInput');
@@ -414,33 +439,9 @@
     const linkInput = document.querySelector('#linkInput');
     const cancelDialog = document.querySelector('#cancelDialog');
 
-    let restaurants = loadRestaurants();
+    let restaurants = [];
     let editingId = null;
     let managerMode = false;
-
-    function loadRestaurants() {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (!saved) return fallbackRestaurants.map(createRestaurant);
-
-      try {
-        const parsed = JSON.parse(saved);
-        return Array.isArray(parsed) ? parsed : fallbackRestaurants.map(createRestaurant);
-      } catch {
-        return fallbackRestaurants.map(createRestaurant);
-      }
-    }
-
-    function createRestaurant(restaurant) {
-      return {
-        id: crypto.randomUUID(),
-        name: restaurant.name,
-        link: restaurant.link
-      };
-    }
-
-    function saveRestaurants() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(restaurants));
-    }
 
     function askManagerPassword() {
       const password = prompt('Введите пароль управляющего');
@@ -517,15 +518,18 @@
       });
     }
 
-    function deleteRestaurant(id) {
+    async function deleteRestaurant(id) {
       if (!managerMode && !askManagerPassword()) return;
       const restaurant = restaurants.find((item) => item.id === id);
       if (!restaurant) return;
       if (!confirm(`Удалить "${restaurant.name}"?`)) return;
 
-      restaurants = restaurants.filter((item) => item.id !== id);
-      saveRestaurants();
-      renderRestaurants();
+      try {
+        await deleteDoc(doc(db, 'restaurants', id));
+      } catch (error) {
+        console.error(error);
+        alert('Не удалось удалить ресторан. Проверьте настройки Firestore.');
+      }
     }
 
     addButton.addEventListener('click', () => openRestaurantForm('add'));
@@ -548,7 +552,7 @@
     searchInput.addEventListener('input', renderRestaurants);
     cancelDialog.addEventListener('click', () => dialog.close());
 
-    form.addEventListener('submit', (event) => {
+    form.addEventListener('submit', async (event) => {
       event.preventDefault();
 
       const restaurant = {
@@ -558,18 +562,41 @@
 
       if (!restaurant.name || !restaurant.link) return;
 
-      if (editingId) {
-        restaurants = restaurants.map((item) => item.id === editingId ? { ...item, ...restaurant } : item);
-      } else {
-        restaurants = [createRestaurant(restaurant), ...restaurants];
-      }
+      try {
+        if (editingId) {
+          await updateDoc(doc(db, 'restaurants', editingId), {
+            ...restaurant,
+            updatedAt: serverTimestamp()
+          });
+        } else {
+          await addDoc(restaurantsRef, {
+            ...restaurant,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+        }
 
-      saveRestaurants();
-      dialog.close();
-      renderRestaurants();
+        dialog.close();
+      } catch (error) {
+        console.error(error);
+        alert('Не удалось сохранить ресторан. Проверьте настройки Firestore.');
+      }
     });
 
-    renderRestaurants();
+    onSnapshot(restaurantsQuery, (snapshot) => {
+      restaurants = snapshot.docs.map((restaurantDoc) => ({
+        id: restaurantDoc.id,
+        ...restaurantDoc.data()
+      }));
+      renderRestaurants();
+    }, (error) => {
+      console.error(error);
+      listEl.innerHTML = '';
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = 'Не удалось загрузить рестораны из базы';
+      listEl.append(empty);
+    });
   </script>
 </body>
 </html>
