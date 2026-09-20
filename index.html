@@ -101,6 +101,22 @@
       box-shadow: 0 10px 24px rgba(8, 10, 14, .14);
     }
 
+    .manager-report {
+      flex: 0 0 auto;
+      border: 0;
+      border-radius: 6px;
+      padding: 12px 16px;
+      color: #fff;
+      background: #2f4858;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 10px 24px rgba(8, 10, 14, .14);
+    }
+
+    .manager-report:hover {
+      background: var(--ink);
+    }
+
     .manager-edit.is-active {
       background: var(--red);
     }
@@ -316,6 +332,64 @@
       background: var(--green);
     }
 
+    .report-dialog {
+      width: min(680px, calc(100% - 28px));
+    }
+
+    .report-filters {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .report-summary {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .report-stat {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #f8faf9;
+    }
+
+    .report-stat strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 28px;
+      color: var(--green);
+    }
+
+    .report-list {
+      display: grid;
+      gap: 8px;
+      max-height: 300px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .report-item {
+      display: grid;
+      gap: 4px;
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--green);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fff;
+    }
+
+    .report-item.is-deleted {
+      border-left-color: var(--red);
+    }
+
+    .report-item small {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
     @media (max-width: 760px) {
       .topbar,
       .restaurant {
@@ -334,9 +408,15 @@
 
       .manager-add,
       .manager-edit,
+      .manager-report,
       .restaurant-count,
       .search-label {
         width: 100%;
+      }
+
+      .report-filters,
+      .report-summary {
+        grid-template-columns: 1fr;
       }
 
       .top-actions {
@@ -359,6 +439,7 @@
       <img class="brand-logo" src="citydrive-logo-hq.png" alt="City Drive">
       <div class="top-actions">
         <button class="manager-edit" type="button" id="toggleManage">Изменить</button>
+        <button class="manager-report" type="button" id="showReport">Отчет</button>
         <button class="manager-add" type="button" id="addRestaurant">+ Добавить ресторан</button>
       </div>
     </header>
@@ -396,21 +477,46 @@
     </form>
   </dialog>
 
+  <dialog class="dialog report-dialog" id="reportDialog">
+    <form class="form" method="dialog">
+      <h2>Отчет по ресторанам</h2>
+      <div class="report-filters">
+        <label class="field">
+          С даты
+          <input id="reportFrom" type="date">
+        </label>
+        <label class="field">
+          По дату
+          <input id="reportTo" type="date">
+        </label>
+        <button class="primary" type="button" id="applyReport">Показать</button>
+      </div>
+      <div class="report-summary">
+        <div class="report-stat">Добавлено<strong id="reportAdded">0</strong></div>
+        <div class="report-stat">Удалено<strong id="reportDeleted">0</strong></div>
+      </div>
+      <div class="report-list" id="reportList"></div>
+      <div class="form-actions">
+        <button class="secondary" type="button" id="closeReport">Закрыть</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="restaurants-data.js"></script>
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
     import {
-      addDoc,
       collection,
-      deleteDoc,
       doc,
+      getDocs,
       getFirestore,
       onSnapshot,
       orderBy,
       query,
       serverTimestamp,
       setDoc,
-      updateDoc
+      updateDoc,
+      writeBatch
     } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
 
     const MANAGER_PASSWORD = 'CityDriveAstana01';
@@ -428,6 +534,7 @@
     const db = getFirestore(app);
     const restaurantsRef = collection(db, 'restaurants');
     const restaurantsQuery = query(restaurantsRef, orderBy('createdAt', 'desc'));
+    const changesRef = collection(db, 'restaurant_changes');
     const seedRestaurants = window.CITYDRIVE_SEED_RESTAURANTS || [];
 
     const listEl = document.querySelector('#restaurantList');
@@ -435,17 +542,60 @@
     const restaurantCount = document.querySelector('#restaurantCount');
     const addButton = document.querySelector('#addRestaurant');
     const toggleManageButton = document.querySelector('#toggleManage');
+    const showReportButton = document.querySelector('#showReport');
     const dialog = document.querySelector('#restaurantDialog');
     const form = document.querySelector('#restaurantForm');
     const dialogTitle = document.querySelector('#dialogTitle');
     const nameInput = document.querySelector('#nameInput');
     const linkInput = document.querySelector('#linkInput');
     const cancelDialog = document.querySelector('#cancelDialog');
+    const reportDialog = document.querySelector('#reportDialog');
+    const reportFrom = document.querySelector('#reportFrom');
+    const reportTo = document.querySelector('#reportTo');
+    const applyReport = document.querySelector('#applyReport');
+    const closeReport = document.querySelector('#closeReport');
+    const reportAdded = document.querySelector('#reportAdded');
+    const reportDeleted = document.querySelector('#reportDeleted');
+    const reportList = document.querySelector('#reportList');
 
     let restaurants = [];
     let editingId = null;
     let managerMode = false;
     let seedImportStarted = false;
+
+    function toDateInputValue(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function getChangeDate(change) {
+      if (change.createdAt?.toDate) return change.createdAt.toDate();
+      if (change.createdAt) return new Date(change.createdAt);
+      return null;
+    }
+
+    function formatChangeDate(date) {
+      if (!date) return 'Дата не указана';
+      return date.toLocaleString('ru-RU', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+
+    function getRestaurantChangeData(type, restaurant, restaurantId) {
+      return {
+        type,
+        restaurantId,
+        name: restaurant.name,
+        link: restaurant.link,
+        createdAt: serverTimestamp()
+      };
+    }
 
     function askManagerPassword() {
       const password = prompt('Введите пароль управляющего');
@@ -522,6 +672,94 @@
       });
     }
 
+    async function renderReport() {
+      reportList.innerHTML = '';
+      const loading = document.createElement('div');
+      loading.className = 'empty';
+      loading.textContent = 'Загружаем отчет...';
+      reportList.append(loading);
+
+      const fromDate = reportFrom.value ? new Date(`${reportFrom.value}T00:00:00`) : null;
+      const toDate = reportTo.value ? new Date(`${reportTo.value}T23:59:59.999`) : null;
+      if (fromDate && toDate && fromDate > toDate) {
+        reportAdded.textContent = '0';
+        reportDeleted.textContent = '0';
+        reportList.innerHTML = '';
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = 'Выберите правильный период дат';
+        reportList.append(empty);
+        return;
+      }
+
+      try {
+        const snapshot = await getDocs(query(changesRef, orderBy('createdAt', 'desc')));
+        const changes = snapshot.docs.map((changeDoc) => ({
+          id: changeDoc.id,
+          ...changeDoc.data()
+        })).filter((change) => {
+          const date = getChangeDate(change);
+          if (!date) return false;
+          if (fromDate && date < fromDate) return false;
+          if (toDate && date > toDate) return false;
+          return true;
+        });
+
+        const added = changes.filter((change) => change.type === 'added').length;
+        const deleted = changes.filter((change) => change.type === 'deleted').length;
+        reportAdded.textContent = added;
+        reportDeleted.textContent = deleted;
+        reportList.innerHTML = '';
+
+        if (changes.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'empty';
+          empty.textContent = 'За выбранный период изменений нет';
+          reportList.append(empty);
+          return;
+        }
+
+        changes.forEach((change) => {
+          const date = getChangeDate(change);
+          const item = document.createElement('div');
+          item.className = `report-item ${change.type === 'deleted' ? 'is-deleted' : ''}`;
+
+          const title = document.createElement('strong');
+          title.textContent = change.name || 'Без названия';
+
+          const meta = document.createElement('small');
+          meta.textContent = `${change.type === 'deleted' ? 'Удалено' : 'Добавлено'} - ${formatChangeDate(date)}`;
+
+          item.append(title, meta);
+          reportList.append(item);
+        });
+      } catch (error) {
+        console.error(error);
+        reportAdded.textContent = '0';
+        reportDeleted.textContent = '0';
+        reportList.innerHTML = '';
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = 'Не удалось загрузить отчет. Проверьте настройки Firestore.';
+        reportList.append(empty);
+      }
+    }
+
+    function openReport() {
+      if (!askManagerPassword()) return;
+
+      const today = new Date();
+      const weekAgo = new Date();
+      weekAgo.setDate(today.getDate() - 7);
+      reportFrom.value = toDateInputValue(weekAgo);
+      reportTo.value = toDateInputValue(today);
+      reportAdded.textContent = '0';
+      reportDeleted.textContent = '0';
+      reportList.innerHTML = '';
+      reportDialog.showModal();
+      renderReport();
+    }
+
     async function deleteRestaurant(id) {
       if (!managerMode && !askManagerPassword()) return;
       const restaurant = restaurants.find((item) => item.id === id);
@@ -529,7 +767,10 @@
       if (!confirm(`Удалить "${restaurant.name}"?`)) return;
 
       try {
-        await deleteDoc(doc(db, 'restaurants', id));
+        const batch = writeBatch(db);
+        batch.set(doc(changesRef), getRestaurantChangeData('deleted', restaurant, id));
+        batch.delete(doc(db, 'restaurants', id));
+        await batch.commit();
       } catch (error) {
         console.error(error);
         alert('Не удалось удалить ресторан. Проверьте настройки Firestore.');
@@ -555,6 +796,7 @@
     }
 
     addButton.addEventListener('click', () => openRestaurantForm('add'));
+    showReportButton.addEventListener('click', openReport);
     toggleManageButton.addEventListener('click', () => {
       if (managerMode) {
         managerMode = false;
@@ -573,6 +815,8 @@
     });
     searchInput.addEventListener('input', renderRestaurants);
     cancelDialog.addEventListener('click', () => dialog.close());
+    applyReport.addEventListener('click', renderReport);
+    closeReport.addEventListener('click', () => reportDialog.close());
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -591,11 +835,15 @@
             updatedAt: serverTimestamp()
           });
         } else {
-          await addDoc(restaurantsRef, {
+          const newRestaurantRef = doc(restaurantsRef);
+          const batch = writeBatch(db);
+          batch.set(newRestaurantRef, {
             ...restaurant,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp()
           });
+          batch.set(doc(changesRef), getRestaurantChangeData('added', restaurant, newRestaurantRef.id));
+          await batch.commit();
         }
 
         dialog.close();
