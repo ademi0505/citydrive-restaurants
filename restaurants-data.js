@@ -134,3 +134,16 @@ window.CITYDRIVE_SEED_RESTAURANTS = [
   { name: 'Густо (La Gustosa)', link: 'https://go.2gis.com/1HVZU' },
   { name: 'Пулбир (Pool&beer )', link: 'https://go.2gis.com/4b8JJ' }
 ];
+
+window.CITYDRIVE_EXTRA_RESTAURANTS = [
+  { name: 'Футур (FUTURE)', link: 'https://2gis.kz/astana/geo/70000001057445719/71.409891,51.137627' },
+  { name: 'Ла Бель (La Belle)', link: 'https://2gis.kz/astana/geo/70000001018069339' },
+  { name: 'Метис (Metis)', link: 'https://2gis.kz/astana/geo/70000001039144614' },
+  { name: 'Токио (лапша Tokyo)', link: 'https://2gis.kz/astana/geo/70000001051303611' },
+  { name: 'Чайна таун (Лапша China Town)', link: 'https://2gis.kz/astana/geo/70000001041052373' },
+  { name: 'Гастерия конаева (Gasteria)', link: 'https://2gis.kz/astana/geo/70000001110134798' },
+  { name: 'гастерия туран (Gasteria)', link: 'https://2gis.kz/astana/geo/70000001062012206' },
+  { name: 'огонек цех', link: 'https://2gis.kz/astana/geo/70030076126953702/71.415186,51.115077' },
+  { name: 'Уно (Uno)', link: 'https://2gis.kz/astana/geo/70030076297673516/71.410781,51.163812' },
+  { name: 'Ишим', link: 'https://2gis.kz/astana/geo/70000001105208365' }
+];

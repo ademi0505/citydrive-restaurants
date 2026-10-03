@@ -197,6 +197,15 @@
       margin-top: 18px;
     }
 
+    .connection-status {
+      margin: 16px 0 0;
+      padding: 12px 14px;
+      border-left: 4px solid var(--red);
+      background: #fff;
+      color: var(--ink);
+      font-weight: 700;
+    }
+
     .restaurant {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
@@ -455,6 +464,7 @@
         <span class="search-label">Поиск</span>
       </div>
 
+      <p class="connection-status" id="connectionStatus" role="status" aria-live="polite" hidden></p>
       <section class="restaurants" id="restaurantList" aria-live="polite"></section>
     </main>
   </div>
@@ -504,22 +514,8 @@
 
   <script src="restaurants-data.js"></script>
   <script type="module">
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
-    import {
-      collection,
-      doc,
-      getDocs,
-      getFirestore,
-      onSnapshot,
-      orderBy,
-      query,
-      serverTimestamp,
-      setDoc,
-      updateDoc,
-      writeBatch
-    } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
-
     const MANAGER_PASSWORD = 'CityDriveAstana01';
+    const RESTAURANT_CACHE_KEY = 'citydrive-restaurants-cache-v1';
     const firebaseConfig = {
       apiKey: 'AIzaSyDptLjtikacZljlzH9FKI1c8eqGUcFwek4',
       authDomain: 'citydrive-restaurants.firebaseapp.com',
@@ -530,12 +526,26 @@
       measurementId: 'G-XJ14NSVTWD'
     };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const restaurantsRef = collection(db, 'restaurants');
-    const restaurantsQuery = query(restaurantsRef, orderBy('createdAt', 'desc'));
-    const changesRef = collection(db, 'restaurant_changes');
     const seedRestaurants = window.CITYDRIVE_SEED_RESTAURANTS || [];
+    const offlineRestaurants = [
+      ...seedRestaurants,
+      ...(window.CITYDRIVE_EXTRA_RESTAURANTS || [])
+    ];
+    let collection;
+    let doc;
+    let getDocs;
+    let getFirestore;
+    let initializeApp;
+    let onSnapshot;
+    let orderBy;
+    let query;
+    let serverTimestamp;
+    let setDoc;
+    let updateDoc;
+    let writeBatch;
+    let db;
+    let restaurantsRef;
+    let changesRef;
 
     const listEl = document.querySelector('#restaurantList');
     const searchInput = document.querySelector('#searchInput');
@@ -543,6 +553,7 @@
     const addButton = document.querySelector('#addRestaurant');
     const toggleManageButton = document.querySelector('#toggleManage');
     const showReportButton = document.querySelector('#showReport');
+    const connectionStatus = document.querySelector('#connectionStatus');
     const dialog = document.querySelector('#restaurantDialog');
     const form = document.querySelector('#restaurantForm');
     const dialogTitle = document.querySelector('#dialogTitle');
@@ -558,10 +569,42 @@
     const reportDeleted = document.querySelector('#reportDeleted');
     const reportList = document.querySelector('#reportList');
 
-    let restaurants = [];
+    function readRestaurantCache() {
+      try {
+        const cached = JSON.parse(window.localStorage.getItem(RESTAURANT_CACHE_KEY));
+        if (!Array.isArray(cached) || cached.length === 0) return null;
+        if (cached.some((restaurant) => {
+          return !restaurant || typeof restaurant.id !== 'string' ||
+            typeof restaurant.name !== 'string' || typeof restaurant.link !== 'string';
+        })) return null;
+        return cached;
+      } catch {
+        return null;
+      }
+    }
+
+    function saveRestaurantCache(items) {
+      try {
+        const cache = items.map(({ id, name, link }) => ({ id, name, link }));
+        window.localStorage.setItem(RESTAURANT_CACHE_KEY, JSON.stringify(cache));
+      } catch (error) {
+        console.warn('Не удалось сохранить список ресторанов в браузере.', error);
+      }
+    }
+
+    let restaurants = readRestaurantCache() || offlineRestaurants.map((restaurant, index) => ({
+      id: `seed_${String(index + 1).padStart(3, '0')}`,
+      ...restaurant
+    }));
     let editingId = null;
     let managerMode = false;
     let seedImportStarted = false;
+    let firebaseReady = false;
+
+    function setConnectionStatus(message) {
+      connectionStatus.textContent = message;
+      connectionStatus.hidden = !message;
+    }
 
     function toDateInputValue(date) {
       const year = date.getFullYear();
@@ -598,6 +641,11 @@
     }
 
     function askManagerPassword() {
+      if (!firebaseReady) {
+        alert('База данных пока недоступна. Просмотр списка работает, изменения временно отключены.');
+        return false;
+      }
+
       const password = prompt('Введите пароль управляющего');
       if (password === MANAGER_PASSWORD) return true;
       if (password !== null) alert('Неверный пароль');
@@ -673,6 +721,11 @@
     }
 
     async function renderReport() {
+      if (!firebaseReady) {
+        alert('Отчет временно недоступен без подключения к базе данных.');
+        return;
+      }
+
       reportList.innerHTML = '';
       const loading = document.createElement('div');
       loading.className = 'empty';
@@ -761,6 +814,11 @@
     }
 
     async function deleteRestaurant(id) {
+      if (!firebaseReady) {
+        alert('Удаление временно недоступно без подключения к базе данных.');
+        return;
+      }
+
       if (!managerMode && !askManagerPassword()) return;
       const restaurant = restaurants.find((item) => item.id === id);
       if (!restaurant) return;
@@ -795,6 +853,69 @@
       }
     }
 
+    async function connectFirebase() {
+      setConnectionStatus('Подключаемся к базе данных...');
+
+      try {
+        const [appSdk, firestoreSdk] = await Promise.all([
+          import('https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js'),
+          import('https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js')
+        ]);
+
+        ({ initializeApp } = appSdk);
+        ({
+          collection,
+          doc,
+          getDocs,
+          getFirestore,
+          onSnapshot,
+          orderBy,
+          query,
+          serverTimestamp,
+          setDoc,
+          updateDoc,
+          writeBatch
+        } = firestoreSdk);
+
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        restaurantsRef = collection(db, 'restaurants');
+        changesRef = collection(db, 'restaurant_changes');
+
+        onSnapshot(query(restaurantsRef, orderBy('createdAt', 'desc')), (snapshot) => {
+          firebaseReady = true;
+          setConnectionStatus('');
+          const existingIds = new Set(snapshot.docs.map((restaurantDoc) => restaurantDoc.id));
+          const hasMissingSeedRestaurants = seedRestaurants.some((restaurant, index) => {
+            return !existingIds.has(`seed_${String(index + 1).padStart(3, '0')}`);
+          });
+
+          if (hasMissingSeedRestaurants && seedRestaurants.length > 0 && !seedImportStarted) {
+            importSeedRestaurants();
+            return;
+          }
+
+          restaurants = snapshot.docs.map((restaurantDoc) => ({
+            id: restaurantDoc.id,
+            ...restaurantDoc.data()
+          }));
+          saveRestaurantCache(restaurants);
+          renderRestaurants();
+        }, (error) => {
+          console.error(error);
+          firebaseReady = false;
+          managerMode = false;
+          setConnectionStatus('Нет соединения с базой: показан встроенный список, изменения временно недоступны.');
+          renderRestaurants();
+        });
+      } catch (error) {
+        console.error(error);
+        firebaseReady = false;
+        setConnectionStatus('Не удалось подключиться к базе: показан встроенный список, изменения временно недоступны.');
+        renderRestaurants();
+      }
+    }
+
     addButton.addEventListener('click', () => openRestaurantForm('add'));
     showReportButton.addEventListener('click', openReport);
     toggleManageButton.addEventListener('click', () => {
@@ -820,6 +941,11 @@
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
+
+      if (!firebaseReady) {
+        alert('Сохранение временно недоступно без подключения к базе данных.');
+        return;
+      }
 
       const restaurant = {
         name: nameInput.value.trim(),
@@ -853,35 +979,8 @@
       }
     });
 
-    onSnapshot(restaurantsQuery, (snapshot) => {
-      const existingIds = new Set(snapshot.docs.map((restaurantDoc) => restaurantDoc.id));
-      const hasMissingSeedRestaurants = seedRestaurants.some((restaurant, index) => {
-        return !existingIds.has(`seed_${String(index + 1).padStart(3, '0')}`);
-      });
-
-      if (hasMissingSeedRestaurants && seedRestaurants.length > 0 && !seedImportStarted) {
-        listEl.innerHTML = '';
-        const empty = document.createElement('div');
-        empty.className = 'empty';
-        empty.textContent = 'Загружаем список ресторанов...';
-        listEl.append(empty);
-        importSeedRestaurants();
-        return;
-      }
-
-      restaurants = snapshot.docs.map((restaurantDoc) => ({
-        id: restaurantDoc.id,
-        ...restaurantDoc.data()
-      }));
-      renderRestaurants();
-    }, (error) => {
-      console.error(error);
-      listEl.innerHTML = '';
-      const empty = document.createElement('div');
-      empty.className = 'empty';
-      empty.textContent = 'Не удалось загрузить рестораны из базы';
-      listEl.append(empty);
-    });
+    renderRestaurants();
+    connectFirebase();
   </script>
 </body>
 </html>
