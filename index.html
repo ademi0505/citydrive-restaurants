@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>City Drive | Рестораны</title>
   <style>
     :root {
@@ -554,6 +554,82 @@
 
   <script src="restaurants-data.js"></script>
   <script>
+    (function () {
+      window.CITYDRIVE_APP_READY = false;
+
+      function emergencyRender() {
+        if (window.CITYDRIVE_APP_READY) return;
+
+        var listEl = document.getElementById('restaurantList');
+        var countEl = document.getElementById('restaurantCount');
+        var statusEl = document.getElementById('connectionStatus');
+        var searchInput = document.getElementById('searchInput');
+        var seed = window.CITYDRIVE_SEED_RESTAURANTS || [];
+        var extra = window.CITYDRIVE_EXTRA_RESTAURANTS || [];
+        var restaurants = seed.concat(extra);
+
+        document.documentElement.style.background = '#f4f5f4';
+        document.body.style.backgroundColor = '#f4f5f4';
+        document.body.style.color = '#080a0e';
+
+        if (!listEl || !countEl) return;
+        if (countEl) countEl.textContent = 'Всего: ' + restaurants.length;
+        if (statusEl) {
+          statusEl.hidden = false;
+          statusEl.textContent = 'Сайт открыт в упрощенном режиме. Если список не обновляется, откройте ссылку в Safari или Chrome.';
+        }
+
+        function draw(items) {
+          listEl.innerHTML = '';
+          if (!items.length) {
+            var empty = document.createElement('div');
+            empty.className = 'empty';
+            empty.textContent = 'Ресторан не найден';
+            listEl.appendChild(empty);
+            return;
+          }
+
+          for (var i = 0; i < items.length; i += 1) {
+            var restaurant = items[i];
+            var card = document.createElement('article');
+            var info = document.createElement('div');
+            var title = document.createElement('h2');
+            var link = document.createElement('a');
+
+            card.className = 'restaurant';
+            title.textContent = restaurant.name || 'Без названия';
+            link.href = restaurant.link || '#';
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.textContent = 'Открыть адрес в 2ГИС';
+
+            info.appendChild(title);
+            info.appendChild(link);
+            card.appendChild(info);
+            listEl.appendChild(card);
+          }
+        }
+
+        draw(restaurants);
+
+        if (searchInput) {
+          searchInput.oninput = function () {
+            var value = searchInput.value.toLowerCase();
+            var filtered = restaurants.filter(function (restaurant) {
+              return String(restaurant.name || '').toLowerCase().indexOf(value) !== -1 ||
+                String(restaurant.link || '').toLowerCase().indexOf(value) !== -1;
+            });
+            draw(filtered);
+          };
+        }
+      }
+
+      window.setTimeout(emergencyRender, 2500);
+      window.addEventListener('error', emergencyRender);
+      window.addEventListener('unhandledrejection', emergencyRender);
+    }());
+  </script>
+  <script>
     const MANAGER_PASSWORD = 'CityDriveAstana01';
     const RESTAURANT_CACHE_KEY = 'citydrive-restaurants-cache-v1';
     const firebaseConfig = {
@@ -741,6 +817,7 @@
     }
 
     function renderRestaurants() {
+      window.CITYDRIVE_APP_READY = true;
       const query = searchInput.value.trim().toLowerCase();
       restaurantCount.textContent = `Всего: ${restaurants.length}`;
       const filtered = restaurants.filter((restaurant) => {
