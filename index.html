@@ -21,9 +21,15 @@
       box-sizing: border-box;
     }
 
+    html {
+      min-height: 100%;
+      background: var(--bg);
+    }
+
     body {
       margin: 0;
       min-height: 100vh;
+      min-height: -webkit-fill-available;
       color: var(--ink);
       font-family: Arial, Helvetica, sans-serif;
       background:
@@ -39,8 +45,16 @@
 
     .app {
       min-height: 100vh;
+      min-height: -webkit-fill-available;
       display: flex;
       flex-direction: column;
+    }
+
+    @supports (min-height: 100dvh) {
+      body,
+      .app {
+        min-height: 100dvh;
+      }
     }
 
     .topbar {
@@ -48,10 +62,11 @@
       top: 0;
       z-index: 10;
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
       gap: 16px;
-      padding: 16px clamp(16px, 4vw, 48px);
+      padding: calc(16px + env(safe-area-inset-top, 0px)) clamp(16px, 4vw, 48px) 16px;
       background: rgba(255, 255, 255, .9);
       border-bottom: 1px solid var(--line);
       backdrop-filter: blur(12px);
@@ -77,6 +92,8 @@
       font-weight: 800;
       cursor: pointer;
       box-shadow: 0 10px 24px rgba(8, 10, 14, .18);
+      max-width: 100%;
+      white-space: normal;
     }
 
     .manager-add:hover {
@@ -85,8 +102,11 @@
 
     .top-actions {
       display: flex;
+      flex: 1 1 320px;
+      flex-wrap: wrap;
       justify-content: flex-end;
       gap: 10px;
+      min-width: 0;
     }
 
     .manager-edit {
@@ -99,6 +119,8 @@
       font-weight: 800;
       cursor: pointer;
       box-shadow: 0 10px 24px rgba(8, 10, 14, .14);
+      max-width: 100%;
+      white-space: normal;
     }
 
     .manager-report {
@@ -111,6 +133,8 @@
       font-weight: 800;
       cursor: pointer;
       box-shadow: 0 10px 24px rgba(8, 10, 14, .14);
+      max-width: 100%;
+      white-space: normal;
     }
 
     .manager-report:hover {
@@ -273,10 +297,26 @@
 
     .dialog {
       width: min(460px, calc(100% - 28px));
+      max-height: calc(100dvh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+      overflow: auto;
       border: 0;
       border-radius: 8px;
       padding: 0;
       box-shadow: var(--shadow);
+    }
+
+    .dialog.is-fallback-modal[open] {
+      position: fixed;
+      inset: calc(16px + env(safe-area-inset-top, 0px)) 14px auto;
+      z-index: 30;
+      margin: 0 auto;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      background: rgba(8, 10, 14, .48);
     }
 
     .dialog::backdrop {
@@ -513,7 +553,7 @@
   </dialog>
 
   <script src="restaurants-data.js"></script>
-  <script type="module">
+  <script>
     const MANAGER_PASSWORD = 'CityDriveAstana01';
     const RESTAURANT_CACHE_KEY = 'citydrive-restaurants-cache-v1';
     const firebaseConfig = {
@@ -531,21 +571,10 @@
       ...seedRestaurants,
       ...(window.CITYDRIVE_EXTRA_RESTAURANTS || [])
     ];
-    let collection;
-    let doc;
-    let getDocs;
-    let getFirestore;
-    let initializeApp;
-    let onSnapshot;
-    let orderBy;
-    let query;
-    let serverTimestamp;
-    let setDoc;
-    let updateDoc;
-    let writeBatch;
     let db;
     let restaurantsRef;
     let changesRef;
+    let firebaseApp;
 
     const listEl = document.querySelector('#restaurantList');
     const searchInput = document.querySelector('#searchInput');
@@ -600,10 +629,57 @@
     let managerMode = false;
     let seedImportStarted = false;
     let firebaseReady = false;
+    let modalBackdrop = null;
 
     function setConnectionStatus(message) {
       connectionStatus.textContent = message;
       connectionStatus.hidden = !message;
+    }
+
+    function showFatalError(error) {
+      console.error(error);
+      setConnectionStatus('Произошла ошибка на странице. Показан встроенный список ресторанов.');
+      renderRestaurants();
+    }
+
+    window.addEventListener('error', (event) => {
+      showFatalError(event.error || event.message);
+    });
+
+    window.addEventListener('unhandledrejection', (event) => {
+      showFatalError(event.reason || 'Необработанная ошибка загрузки.');
+    });
+
+    function openModal(modal, focusEl) {
+      if (typeof modal.showModal === 'function') {
+        modal.showModal();
+      } else {
+        modal.setAttribute('open', '');
+        modal.classList.add('is-fallback-modal');
+        if (!modalBackdrop) {
+          modalBackdrop = document.createElement('div');
+          modalBackdrop.className = 'modal-backdrop';
+          modalBackdrop.addEventListener('click', () => closeModal(modal));
+        }
+        document.body.append(modalBackdrop);
+      }
+
+      if (focusEl && typeof focusEl.focus === 'function') {
+        window.setTimeout(() => focusEl.focus(), 0);
+      }
+    }
+
+    function closeModal(modal) {
+      if (typeof modal.close === 'function') {
+        modal.close();
+      } else {
+        modal.removeAttribute('open');
+        modal.classList.remove('is-fallback-modal');
+      }
+
+      if (modalBackdrop && modalBackdrop.parentNode) {
+        modalBackdrop.parentNode.removeChild(modalBackdrop);
+      }
     }
 
     function toDateInputValue(date) {
@@ -614,7 +690,7 @@
     }
 
     function getChangeDate(change) {
-      if (change.createdAt?.toDate) return change.createdAt.toDate();
+      if (change.createdAt && typeof change.createdAt.toDate === 'function') return change.createdAt.toDate();
       if (change.createdAt) return new Date(change.createdAt);
       return null;
     }
@@ -636,7 +712,9 @@
         restaurantId,
         name: restaurant.name,
         link: restaurant.link,
-        createdAt: serverTimestamp()
+        createdAt: window.firebase && window.firebase.firestore && window.firebase.firestore.FieldValue
+          ? window.firebase.firestore.FieldValue.serverTimestamp()
+          : new Date().toISOString()
       };
     }
 
@@ -659,8 +737,7 @@
       dialogTitle.textContent = mode === 'edit' ? 'Изменить ресторан' : 'Добавить ресторан';
       nameInput.value = restaurant ? restaurant.name : '';
       linkInput.value = restaurant ? restaurant.link : '';
-      dialog.showModal();
-      nameInput.focus();
+      openModal(dialog, nameInput);
     }
 
     function renderRestaurants() {
@@ -746,7 +823,11 @@
       }
 
       try {
-        const snapshot = await getDocs(query(changesRef, orderBy('createdAt', 'desc')));
+        const snapshot = await withTimeout(
+          changesRef.orderBy('createdAt', 'desc').get(),
+          9000,
+          'Превышено время загрузки отчета.'
+        );
         const changes = snapshot.docs.map((changeDoc) => ({
           id: changeDoc.id,
           ...changeDoc.data()
@@ -809,7 +890,7 @@
       reportAdded.textContent = '0';
       reportDeleted.textContent = '0';
       reportList.innerHTML = '';
-      reportDialog.showModal();
+      openModal(reportDialog);
       renderReport();
     }
 
@@ -825,9 +906,9 @@
       if (!confirm(`Удалить "${restaurant.name}"?`)) return;
 
       try {
-        const batch = writeBatch(db);
-        batch.set(doc(changesRef), getRestaurantChangeData('deleted', restaurant, id));
-        batch.delete(doc(db, 'restaurants', id));
+        const batch = db.batch();
+        batch.set(changesRef.doc(), getRestaurantChangeData('deleted', restaurant, id));
+        batch.delete(restaurantsRef.doc(id));
         await batch.commit();
       } catch (error) {
         console.error(error);
@@ -841,10 +922,10 @@
       try {
         await Promise.all(seedRestaurants.map((restaurant, index) => {
           const restaurantId = `seed_${String(index + 1).padStart(3, '0')}`;
-          return setDoc(doc(db, 'restaurants', restaurantId), {
+          return restaurantsRef.doc(restaurantId).set({
             ...restaurant,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
+            createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
           }, { merge: true });
         }));
       } catch (error) {
@@ -853,36 +934,80 @@
       }
     }
 
+    function withTimeout(promise, timeoutMs, message) {
+      return new Promise((resolve, reject) => {
+        const timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+        promise.then((value) => {
+          window.clearTimeout(timer);
+          resolve(value);
+        }).catch((error) => {
+          window.clearTimeout(timer);
+          reject(error);
+        });
+      });
+    }
+
+    function loadScript(src, timeoutMs) {
+      return new Promise((resolve, reject) => {
+        const existing = document.querySelector(`script[src="${src}"]`);
+        if (existing && existing.dataset.loaded === 'true') {
+          resolve();
+          return;
+        }
+
+        const script = existing || document.createElement('script');
+        const timer = window.setTimeout(() => {
+          script.onload = null;
+          script.onerror = null;
+          reject(new Error(`Не удалось загрузить ${src}`));
+        }, timeoutMs);
+
+        script.onload = () => {
+          window.clearTimeout(timer);
+          script.dataset.loaded = 'true';
+          resolve();
+        };
+        script.onerror = () => {
+          window.clearTimeout(timer);
+          reject(new Error(`Ошибка загрузки ${src}`));
+        };
+
+        if (!existing) {
+          script.src = src;
+          script.async = true;
+          script.crossOrigin = 'anonymous';
+          document.head.append(script);
+        }
+      });
+    }
+
     async function connectFirebase() {
       setConnectionStatus('Подключаемся к базе данных...');
 
       try {
-        const [appSdk, firestoreSdk] = await Promise.all([
-          import('https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js'),
-          import('https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js')
-        ]);
+        await withTimeout(
+          loadScript('https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js', 9000),
+          10000,
+          'Превышено время подключения к Firebase.'
+        );
+        await withTimeout(
+          loadScript('https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js', 9000),
+          10000,
+          'Превышено время подключения к Firestore.'
+        );
 
-        ({ initializeApp } = appSdk);
-        ({
-          collection,
-          doc,
-          getDocs,
-          getFirestore,
-          onSnapshot,
-          orderBy,
-          query,
-          serverTimestamp,
-          setDoc,
-          updateDoc,
-          writeBatch
-        } = firestoreSdk);
+        if (!window.firebase || !window.firebase.firestore) {
+          throw new Error('Firebase SDK недоступен.');
+        }
 
-        const app = initializeApp(firebaseConfig);
-        db = getFirestore(app);
-        restaurantsRef = collection(db, 'restaurants');
-        changesRef = collection(db, 'restaurant_changes');
+        firebaseApp = window.firebase.apps.length
+          ? window.firebase.app()
+          : window.firebase.initializeApp(firebaseConfig);
+        db = firebaseApp.firestore();
+        restaurantsRef = db.collection('restaurants');
+        changesRef = db.collection('restaurant_changes');
 
-        onSnapshot(query(restaurantsRef, orderBy('createdAt', 'desc')), (snapshot) => {
+        restaurantsRef.orderBy('createdAt', 'desc').onSnapshot((snapshot) => {
           firebaseReady = true;
           setConnectionStatus('');
           const existingIds = new Set(snapshot.docs.map((restaurantDoc) => restaurantDoc.id));
@@ -935,9 +1060,9 @@
       renderRestaurants();
     });
     searchInput.addEventListener('input', renderRestaurants);
-    cancelDialog.addEventListener('click', () => dialog.close());
+    cancelDialog.addEventListener('click', () => closeModal(dialog));
     applyReport.addEventListener('click', renderReport);
-    closeReport.addEventListener('click', () => reportDialog.close());
+    closeReport.addEventListener('click', () => closeModal(reportDialog));
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -956,23 +1081,23 @@
 
       try {
         if (editingId) {
-          await updateDoc(doc(db, 'restaurants', editingId), {
+          await restaurantsRef.doc(editingId).update({
             ...restaurant,
-            updatedAt: serverTimestamp()
+            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
           });
         } else {
-          const newRestaurantRef = doc(restaurantsRef);
-          const batch = writeBatch(db);
+          const newRestaurantRef = restaurantsRef.doc();
+          const batch = db.batch();
           batch.set(newRestaurantRef, {
             ...restaurant,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
+            createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
           });
-          batch.set(doc(changesRef), getRestaurantChangeData('added', restaurant, newRestaurantRef.id));
+          batch.set(changesRef.doc(), getRestaurantChangeData('added', restaurant, newRestaurantRef.id));
           await batch.commit();
         }
 
-        dialog.close();
+        closeModal(dialog);
       } catch (error) {
         console.error(error);
         alert('Не удалось сохранить ресторан. Проверьте настройки Firestore.');
